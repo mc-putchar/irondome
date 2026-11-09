@@ -1,6 +1,15 @@
+use std::path::PathBuf;
+
+use anyhow::Result;
+
+use crate::logger::IronDomeLogger;
+
 pub trait PlatformMonitor {
-    fn init_watcher(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>>;
-    fn poll_events(&mut self) -> Vec<FileEvent>;
+    fn init(logger: &IronDomeLogger, target_paths: &Vec<PathBuf>) -> Result<Self>
+    where
+        Self: Sized;
+
+    fn poll_events(&mut self, logger: &IronDomeLogger) -> Result<()>;
 }
 
 pub struct FileEvent {

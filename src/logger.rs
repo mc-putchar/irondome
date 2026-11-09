@@ -1,12 +1,19 @@
 use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use anyhow::Result;
+
+const LOG_DIR: &str = "/var/log/irondome";
+pub const LOG_PATH: &str = "/var/log/irondome/irondome.log";
+
 pub enum LogLevel {
     Info,
+    Event,
     Warning,
+    Error,
     Alert,
 }
 
@@ -14,7 +21,9 @@ impl LogLevel {
     fn as_str(&self) -> &'static str {
         match self {
             LogLevel::Info => "INFO",
-            LogLevel::Warning => "WARNING",
+            LogLevel::Event => "EVENT",
+            LogLevel::Warning => "WARN",
+            LogLevel::Error => "ERROR",
             LogLevel::Alert => "ALERT",
         }
     }
@@ -27,18 +36,15 @@ pub struct IronDomeLogger {
 
 impl IronDomeLogger {
     /// Initializes the logger, creating directories and the log file if missing.
-    pub fn init() -> Result<Self, std::io::Error> {
-        let log_dir = "/var/log/irondome";
-        let log_path = format!("{}/irondome.log", log_dir);
-
-        if !Path::new(log_dir).exists() {
-            create_dir_all(log_dir)?;
+    pub fn init() -> Result<Self> {
+        if !Path::new(LOG_DIR).exists() {
+            create_dir_all(LOG_DIR)?;
         }
 
         let file = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(log_path)?;
+            .open(LOG_PATH)?;
 
         Ok(IronDomeLogger {
             file: Mutex::new(file),
@@ -56,7 +62,7 @@ impl IronDomeLogger {
 
     /// Writes a structured message to the log file.
     /// It returns a Result to allow the main loop to handle failures gracefully.
-    pub fn log(&self, level: LogLevel, component: &str, message: &str) -> Result<(), std::io::Error> {
+    pub fn log(&self, level: LogLevel, component: &str, message: &str) -> Result<()> {
         let timestamp = self.get_timestamp();
         let log_line = format!(
             "[{}] [{}] [{}] {}\n",
@@ -75,5 +81,24 @@ impl IronDomeLogger {
         file_guard.flush()?;
 
         Ok(())
+    }
+
+    pub fn system_info(&self, message: &str) {
+        let _ = self.log(LogLevel::Info, "SYSTEM", message);
+    }
+
+    pub fn system_warn(&self, message: &str) {
+        let _ = self.log(LogLevel::Warning, "SYSTEM", message);
+    }
+
+    pub fn system_error(&self, message: &str) {
+        let _ = self.log(LogLevel::Error, "SYSTEM", message);
+    }
+
+    pub fn event(&self, pid: i32, path: PathBuf, mask: u64) {
+        let _ = self.log(
+            LogLevel::Event,
+            "MONITOR",
+            format!("PID {} touched {:?} (mask: {:#?})", pid, path, mask).as_str());
     }
 }

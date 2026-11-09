@@ -1,63 +1,47 @@
-mod monitor;
-mod entropy;
-mod logger;
-mod daemon;
+use irondome::logger::{IronDomeLogger, LOG_PATH};
+use irondome::monitor::PlatformMonitor;
+use irondome::monitor::linux::LinuxMonitor;
+use irondome::daemon::{daemonize, is_root};
 
-use monitor::linux::LinuxMonitor;
-use logger::{IronDomeLogger, LogLevel};
+use anyhow::{Context, Result, anyhow};
+use std::{env, path::{Path, PathBuf}};
 
-use std::{env, path::Path};
-
-
-unsafe extern "C" { fn getuid() -> u32; }
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = env::args().nth(1);
-    if path.is_none() {
-        return Err("Provide a path to watch".into());
-    }
-    let path = path.unwrap();
-    let path = Path::new(&path);
-    if !path.is_dir() {
-        return Err("Path must be an existing directory".into());
+fn main() -> Result<()> {
+    if !is_root() {
+        return Err(anyhow!("Not running as root. Iron Dome must run as root."));
     }
 
-    let absolute_path = path.canonicalize()?;
-    println!("Watching: {}", absolute_path.display());
+    let logger = IronDomeLogger::init()
+        .with_context(|| format!("failed to create log file at '{}'", LOG_PATH))?;
 
-    let logger = match IronDomeLogger::init() {
-        Ok(log) => log,
-        Err(e) => {
-            eprintln!("Critical Failure: Could not initialize log file: {}", e);
-            std::process::exit(1);
-        }
-    };
+    let args: Vec<String> = env::args().collect();
+    let target_paths: Vec<PathBuf> = get_target_paths(&args[1..])?;
+    if target_paths.is_empty() {
+        return Err(anyhow!("No valid path specified."));
+    }
 
-    println!("Starting irondome daemon");
-    // daemon::daemonize();
+    let _ = logger.system_info("Starting irondome daemon...");
+    daemonize();
+    let _ = logger.system_info(format!("irondome daemon started successfully. PID: {}", std::process::id()).as_str());
 
-    let _ = logger.log(LogLevel::Info, "SYSTEM", "Iron Dome daemon started successfully.");
+    #[cfg(target_os = "linux")]
+    let mut monitor = LinuxMonitor::init(&logger, &target_paths)?;
+    #[cfg(not(target_os = "linux"))]
+    return Err(anyhow!("OS not supported!"));
 
-
-    // let mut monitor = LinuxMonitor::init_watcher(path);
-    // monitor.init_watcher(&absolute_path.to_string_lossy())?;
     loop {
-        // Mock event trigger
-        let suspicious_activity_detected = true;
-        let file_path = "/critical/path/compromised.txt";
+        monitor.poll_events(&logger)?
+    }
+}
 
-        if suspicious_activity_detected {
-            if let Err(_err) = logger.log(
-                LogLevel::Alert,
-                "ENTROPY",
-                &format!("Suspicious entropy jump detected on file: {}", file_path)
-            ) {
-                // TODO: Fail-safe: could attempt an alternate fallback write to /tmp or /dev/kmsg here
-            }
-        }
+fn get_target_paths(args: &[String]) -> Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
 
-        std::thread::sleep(std::time::Duration::from_millis(500));
+    for arg in args {
+        let path = Path::new(arg).canonicalize().with_context(|| format!("Path '{}' is not accessible", arg))?;
+        println!("Monitoring: {:#?}", path);
+        paths.push(path);
     }
 
-    // Ok(())
+    Ok(paths)
 }

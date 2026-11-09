@@ -6,25 +6,40 @@ unsafe extern "C" {
     fn getuid() -> u32;
 }
 
+pub fn is_root() -> bool {
+    unsafe { getuid() == 0 }
+}
+
 pub fn daemonize() {
     unsafe {
         if getuid() != 0 {
             eprintln!("Error: Iron Dome must be run as root.");
-            // std::process::exit(1);
+            std::process::exit(1);
         }
 
         // First fork
         let pid = fork();
-        if pid < 0 { std::process::exit(1); }
-        if pid > 0 { std::process::exit(0); } // Exit parent
+        if pid < 0 {
+            std::process::exit(1);
+        }
+        // Exit parent
+        if pid > 0 {
+            std::process::exit(0);
+        }
 
         // Create a new SID for the child process
-        if setsid() < 0 { std::process::exit(1); }
+        if setsid() < 0 {
+            std::process::exit(1);
+        }
 
         // Second fork (prevents acquiring a controlling terminal)
         let pid = fork();
-        if pid < 0 { std::process::exit(1); }
-        if pid > 0 { std::process::exit(0); }
+        if pid < 0 {
+            std::process::exit(1);
+        }
+        if pid > 0 {
+            std::process::exit(0);
+        }
 
         // Set file permissions
         umask(0);
