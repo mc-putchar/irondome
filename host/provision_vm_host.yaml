@@ -1,0 +1,10 @@
+---
+- name: Provision VM Host for Libvirt
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Ensure system is up-to-date
+      apt:
+        update_cache: yes
+        upgrade: dist

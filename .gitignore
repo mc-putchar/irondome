@@ -1,2 +1,6 @@
 /target
 *.subject.pdf
+*.iso
+*.qcow2
+host/user-data
+.DS_Store

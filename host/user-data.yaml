@@ -1,0 +1,39 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+chpasswd:
+  expire: false
+
+packages:
+  - qemu-guest-agent
+  - zip
+  - unzip
+  - curl
+  - wget
+  - net-tools
+  - openssh-server
+  - ca-certificates
+  - gnupg
+  - git
+  - lsb-release
+  - software-properties-common
+  - apt-transport-https
+  - build-essential
+  - make
+  - rustup
+
+users:
+  - name: irondome
+    ssh_authorized_keys:
+      - "<SSH_KEY>"
+    groups: users, sudo
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: false
+    passwd: "<PASSWD_HASH>"
+
+runcmd:
+  - systemctl enable --now qemu-guest-agent
+  - rustup default stable
+  - mount -t 9p -o trans=virtio,version=9p2000.L irondome /mnt
