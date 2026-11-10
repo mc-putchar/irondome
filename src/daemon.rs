@@ -61,6 +61,7 @@ fn acquire_pid_lock(pid_path: &str) -> Result<File> {
         .read(true)
         .write(true)
         .create(true)
+        .truncate(true)
         .mode(0o640)
         .open(pid_path)?;
 

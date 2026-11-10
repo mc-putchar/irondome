@@ -74,7 +74,7 @@ impl IronDomeLogger {
 
         // Lock the file mutex to prevent log scrambling across threads/tasks
         let mut file_guard = self.file.lock().map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::Other, "Failed to acquire log lock")
+            std::io::Error::other("Failed to acquire log lock")
         })?;
 
         file_guard.write_all(log_line.as_bytes())?;

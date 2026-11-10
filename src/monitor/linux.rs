@@ -6,7 +6,7 @@ use std::ffi::CString;
 use std::fs;
 use std::io::{self, Error};
 use std::os::fd::RawFd;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
 use walkdir::WalkDir;
@@ -19,7 +19,7 @@ pub struct LinuxMonitor {
 }
 
 impl PlatformMonitor for LinuxMonitor {
-    fn init(logger: &IronDomeLogger, target_paths: &Vec<PathBuf>) -> Result<Self> {
+    fn init(logger: &IronDomeLogger, target_paths: &[PathBuf]) -> Result<Self> {
         let fd = unsafe {
             libc::fanotify_init(
                 libc::FAN_CLASS_NOTIF | libc::FAN_CLOEXEC,
@@ -76,7 +76,7 @@ impl PlatformMonitor for LinuxMonitor {
         while offset + meta_size <= total {
             let meta =
                 unsafe { &*(buf.0.as_ptr().add(offset) as *const libc::fanotify_event_metadata) };
-            if meta.vers != libc::FANOTIFY_METADATA_VERSION as u8 {
+            if meta.vers != libc::FANOTIFY_METADATA_VERSION {
                 panic!("Mismatched fanotify metadata version");
             }
             if meta.event_len as usize == 0_usize {
@@ -109,7 +109,7 @@ impl Drop for LinuxMonitor {
 fn watch_path(
     logger: &IronDomeLogger,
     fd: i32,
-    target_path: &PathBuf,
+    target_path: &Path,
     flags: u32,
     mask: u64,
 ) -> Result<()> {
@@ -119,13 +119,7 @@ fn watch_path(
     if ret == -1 {
         unsafe { libc::close(fd) };
         let err = Error::last_os_error();
-        logger.system_error(
-            format!(
-                "failed to add watch on the path specified: {}",
-                err.to_string()
-            )
-            .as_str(),
-        );
+        logger.system_error(format!("failed to add watch on the path specified: {}", err).as_str());
         Err(anyhow!(err))
     } else {
         Ok(())
