@@ -20,9 +20,8 @@ fn main() -> Result<()> {
         return Err(anyhow!("No valid path specified."));
     }
 
-    let _ = logger.system_info("Starting irondome daemon...");
-    daemonize();
-    let _ = logger.system_info(format!("irondome daemon started successfully. PID: {}", std::process::id()).as_str());
+    logger.system_info("Starting irondome daemon...");
+    let _pid_file = daemonize()?;
 
     #[cfg(target_os = "linux")]
     let mut monitor = LinuxMonitor::init(&logger, &target_paths)?;
