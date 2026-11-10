@@ -22,7 +22,7 @@ impl PlatformMonitor for LinuxMonitor {
     fn init(logger: &IronDomeLogger, target_paths: &[PathBuf]) -> Result<Self> {
         let fd = unsafe {
             libc::fanotify_init(
-                libc::FAN_CLASS_NOTIF | libc::FAN_CLOEXEC,
+                libc::FAN_CLASS_NOTIF | libc::FAN_CLOEXEC | libc::FAN_UNLIMITED_MARKS,
                 (libc::O_RDONLY | libc::O_LARGEFILE | libc::O_CLOEXEC) as u32,
             )
         };
@@ -34,11 +34,20 @@ impl PlatformMonitor for LinuxMonitor {
         for target_path in target_paths {
             let flags = libc::FAN_MARK_ADD;
             let mut mask: u64 = libc::FAN_ACCESS | libc::FAN_CLOSE_WRITE | libc::FAN_MODIFY;
+
             if target_path.is_dir() {
                 mask |= libc::FAN_EVENT_ON_CHILD;
-                for entry in WalkDir::new(target_path) {
-                    let entry = &entry.unwrap().into_path();
-                    watch_path(logger, fd, entry, flags, mask)?;
+                for entry in WalkDir::new(target_path).follow_links(true) {
+                    match entry {
+                        Ok(entry) => {
+                            if entry.file_type().is_dir() {
+                                watch_path(logger, fd, &entry.into_path(), flags, mask)?;
+                            }
+                        }
+                        Err(e) => logger.system_error(
+                            format!("could not access directory entry: {e}").as_str(),
+                        ),
+                    }
                 }
                 // TODO: if a new subdirectory is created inside one of these after init,
                 // catch the event and also mark that subdirectory

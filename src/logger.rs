@@ -11,9 +11,9 @@ pub const LOG_PATH: &str = "/var/log/irondome/irondome.log";
 
 pub enum LogLevel {
     Info,
-    Event,
     Warning,
     Error,
+    Event,
     Alert,
 }
 
@@ -21,9 +21,9 @@ impl LogLevel {
     fn as_str(&self) -> &'static str {
         match self {
             LogLevel::Info => "INFO",
-            LogLevel::Event => "EVENT",
             LogLevel::Warning => "WARN",
             LogLevel::Error => "ERROR",
+            LogLevel::Event => "EVENT",
             LogLevel::Alert => "ALERT",
         }
     }
@@ -73,9 +73,10 @@ impl IronDomeLogger {
         );
 
         // Lock the file mutex to prevent log scrambling across threads/tasks
-        let mut file_guard = self.file.lock().map_err(|_| {
-            std::io::Error::other("Failed to acquire log lock")
-        })?;
+        let mut file_guard = self
+            .file
+            .lock()
+            .map_err(|_| std::io::Error::other("Failed to acquire log lock"))?;
 
         file_guard.write_all(log_line.as_bytes())?;
         file_guard.flush()?;
