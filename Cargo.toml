@@ -6,4 +6,5 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.104"
 libc = "0.2.191"
+signal-hook = "0.4.6"
 walkdir = "2.5.0"

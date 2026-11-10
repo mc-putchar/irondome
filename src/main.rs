@@ -2,6 +2,7 @@ use irondome::daemon::{daemonize, is_root};
 use irondome::logger::{IronDomeLogger, LOG_PATH};
 use irondome::monitor::PlatformMonitor;
 use irondome::monitor::linux::LinuxMonitor;
+use irondome::signals::setup_signal_handlers;
 
 use anyhow::{Context, Result, anyhow};
 use std::{
@@ -25,6 +26,7 @@ fn main() -> Result<()> {
 
     logger.system_info("Starting irondome daemon...");
     let _pid_file = daemonize()?;
+    setup_signal_handlers()?;
 
     #[cfg(target_os = "linux")]
     let mut monitor = LinuxMonitor::init(&logger, &target_paths)?;

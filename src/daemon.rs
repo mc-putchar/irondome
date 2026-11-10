@@ -1,3 +1,4 @@
+use std::env;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::os::fd::AsRawFd;
@@ -13,6 +14,8 @@ pub fn is_root() -> bool {
 
 pub fn daemonize() -> Result<File> {
     let pid_file = acquire_pid_lock(PID_FILE_PATH)?;
+
+    env::set_current_dir("/")?;
 
     unsafe {
         if libc::getuid() != 0 {
