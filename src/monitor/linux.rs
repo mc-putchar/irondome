@@ -6,6 +6,7 @@ use std::ffi::CString;
 use std::fs;
 use std::io::{self, Error};
 use std::os::fd::RawFd;
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
@@ -33,26 +34,27 @@ impl PlatformMonitor for LinuxMonitor {
 
         for target_path in target_paths {
             let flags = libc::FAN_MARK_ADD;
-            let mut mask: u64 = libc::FAN_ACCESS | libc::FAN_CLOSE_WRITE | libc::FAN_MODIFY;
+            let mut mask: u64 =
+                libc::FAN_ACCESS | libc::FAN_CLOSE_WRITE | libc::FAN_MODIFY | libc::FAN_DELETE_SELF;
 
             if target_path.is_dir() {
-                mask |= libc::FAN_EVENT_ON_CHILD;
+                mask |= libc::FAN_EVENT_ON_CHILD | libc::FAN_CREATE | libc::FAN_DELETE;
                 for entry in WalkDir::new(target_path).follow_links(true) {
                     match entry {
                         Ok(entry) => {
                             if entry.file_type().is_dir() {
-                                watch_path(logger, fd, &entry.into_path(), flags, mask)?;
+                                let _ = watch_path(logger, fd, &entry.into_path(), flags, mask);
                             }
                         }
-                        Err(e) => logger.system_error(
-                            format!("could not access directory entry: {e}").as_str(),
-                        ),
+                        Err(e) => {
+                            logger.system_error(&format!("could not access directory entry: {e}"))
+                        }
                     }
                 }
                 // TODO: if a new subdirectory is created inside one of these after init,
                 // catch the event and also mark that subdirectory
             } else {
-                watch_path(logger, fd, target_path, flags, mask)?
+                let _ = watch_path(logger, fd, target_path, flags, mask);
             }
         }
 
@@ -75,7 +77,7 @@ impl PlatformMonitor for LinuxMonitor {
             if err.kind() == io::ErrorKind::Interrupted {
                 return Ok(());
             }
-            logger.system_error(format!("failed to read fanotify fd: {}", err).as_str());
+            logger.system_error(&format!("failed to read fanotify fd: {}", err));
             return Err(anyhow!("failed to read fanotify fd: {}", err));
         }
 
@@ -86,6 +88,7 @@ impl PlatformMonitor for LinuxMonitor {
             let meta =
                 unsafe { &*(buf.0.as_ptr().add(offset) as *const libc::fanotify_event_metadata) };
             if meta.vers != libc::FANOTIFY_METADATA_VERSION {
+                logger.system_error("Mismatched fanotify metadata version");
                 panic!("Mismatched fanotify metadata version");
             }
             if meta.event_len as usize == 0_usize {
@@ -122,11 +125,10 @@ fn watch_path(
     flags: u32,
     mask: u64,
 ) -> Result<()> {
-    let c_path = CString::new(target_path.to_str().unwrap())?;
+    let c_path = CString::new(target_path.as_os_str().as_bytes())?;
 
     let ret = unsafe { libc::fanotify_mark(fd, flags, mask, libc::AT_FDCWD, c_path.as_ptr()) };
     if ret == -1 {
-        unsafe { libc::close(fd) };
         let err = Error::last_os_error();
         logger.system_error(format!("failed to add watch on the path specified: {}", err).as_str());
         Err(anyhow!(err))

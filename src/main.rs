@@ -4,11 +4,12 @@ use irondome::monitor::PlatformMonitor;
 use irondome::monitor::linux::LinuxMonitor;
 use irondome::signals::setup_signal_handlers;
 
+use std::env;
+use std::path::{Path, PathBuf};
+
 use anyhow::{Context, Result, anyhow};
-use std::{
-    env,
-    path::{Path, PathBuf},
-};
+
+const DEFAULT_TARGET_PATHS: &[&str] = &["/etc", "/home", "/var"];
 
 fn main() -> Result<()> {
     if !is_root() {
@@ -18,8 +19,10 @@ fn main() -> Result<()> {
     let logger = IronDomeLogger::init()
         .with_context(|| format!("failed to create log file at '{}'", LOG_PATH))?;
 
-    let args: Vec<String> = env::args().collect();
-    let target_paths: Vec<PathBuf> = get_target_paths(&args[1..])?;
+    let args: Vec<String> = env::args().skip(1).collect();
+    let args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+
+    let target_paths: Vec<PathBuf> = get_target_paths(&args)?;
     if target_paths.is_empty() {
         return Err(anyhow!("No valid path specified."));
     }
@@ -34,14 +37,20 @@ fn main() -> Result<()> {
     return Err(anyhow!("OS not supported!"));
 
     loop {
-        monitor.poll_events(&logger)?
+        if let Err(e) = monitor.poll_events(&logger) {
+            logger.system_error(&format!("Monitor poll error: {e}"));
+        }
     }
 }
 
-fn get_target_paths(args: &[String]) -> Result<Vec<PathBuf>> {
+fn get_target_paths(args: &[&str]) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
 
-    for arg in args {
+    for arg in if args.is_empty() {
+        DEFAULT_TARGET_PATHS
+    } else {
+        args
+    } {
         let path = Path::new(arg)
             .canonicalize()
             .with_context(|| format!("Path '{}' is not accessible", arg))?;
