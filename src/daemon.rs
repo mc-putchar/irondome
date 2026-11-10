@@ -13,16 +13,15 @@ pub fn is_root() -> bool {
 }
 
 pub fn daemonize() -> Result<File> {
-    let pid_file = acquire_pid_lock(PID_FILE_PATH)?;
+    if !is_root() {
+        return Err(anyhow!("Iron Dome must be run as root."));
+    }
+
+    let mut pid_file = acquire_pid_lock(PID_FILE_PATH)?;
 
     env::set_current_dir("/")?;
 
     unsafe {
-        if libc::getuid() != 0 {
-            eprintln!("Error: Iron Dome must be run as root.");
-            std::process::exit(1);
-        }
-
         // First fork
         let pid = libc::fork();
         if pid < 0 {
@@ -56,15 +55,19 @@ pub fn daemonize() -> Result<File> {
         libc::close(2);
     }
 
+    pid_file.set_len(0)?;
+    writeln!(pid_file, "{}", std::process::id())?;
+    pid_file.sync_all()?;
+
     Ok(pid_file)
 }
 
 fn acquire_pid_lock(pid_path: &str) -> Result<File> {
-    let mut file = OpenOptions::new()
+    let file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
-        .truncate(true)
+        .truncate(false)
         .mode(0o640)
         .open(pid_path)?;
 
@@ -72,10 +75,6 @@ fn acquire_pid_lock(pid_path: &str) -> Result<File> {
     if ret < 0 {
         return Err(anyhow!("Another instance of irondome is already running"));
     }
-
-    file.set_len(0)?;
-    writeln!(file, "{}", std::process::id())?;
-    file.sync_all()?;
 
     Ok(file)
 }
