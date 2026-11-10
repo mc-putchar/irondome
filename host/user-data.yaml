@@ -21,7 +21,6 @@ packages:
   - apt-transport-https
   - build-essential
   - make
-  - rustup
 
 users:
   - name: irondome
@@ -35,5 +34,9 @@ users:
 
 runcmd:
   - systemctl enable --now qemu-guest-agent
-  - rustup default stable
-  - mount -t 9p -o trans=virtio,version=9p2000.L irondome /mnt
+  - echo "irondome /mnt 9p trans=virtio,version=9p2000.L,msize=512000 0 0" >> /etc/fstab
+  - mount /mnt
+  - su - irondome -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+  - su - irondome -c "export PATH=\"\$HOME/.cargo/bin:\$PATH\" && cd /mnt && CARGO_TARGET_DIR=/home/irondome/target cargo build --release"
+  - cp /home/irondome/target/release/irondome /usr/local/bin/irondome
+  - chmod +x /usr/local/bin/irondome

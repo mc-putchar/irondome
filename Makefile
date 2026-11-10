@@ -54,7 +54,7 @@ CYA := \033[36m
 CYB := \033[1;36m
 NC  := \033[0m
 
-.PHONY: help install clean run debug container start stop console ssh vm-install isofs
+.PHONY: help install clean container start stop console ssh vm-install isofs
 
 help:	## Display this helpful message
 	@echo -e "${BOLD}${CYA}===============================${NC}"
@@ -76,12 +76,6 @@ clean:	## Clean the project
 	-virsh $(SESSION) undefine $(VM_NAME) $(VM_UNDEFINE_OPTS)
 	-ssh-keygen -f "$$HOME/.ssh/known_hosts" -R "[localhost]:$(HOST_SSH_PORT)" || true
 	-cargo clean
-
-run:	## Run the Iron Dome
-	cargo run --release
-
-debug:	## Run in debug mode
-	RUST_TRACE=1 cargo run
 
 container:	## Run the project in containerized environment
 	docker build . -t $(NAME)
@@ -106,7 +100,7 @@ vm-install: isofs $(VM_CLOUDIMG)	## Install VM from CloudImg
 		--disk path=$(VM_CLOUDIMG),format=qcow2,bus=virtio \
 		--disk path=host/seed.iso,device=disk,bus=virtio,readonly=on \
 		--check disk_size=off \
-		--filesystem $$(pwd),irondome,type=mount,mode=squash \
+		--filesystem $$(pwd),irondome,type=mount,mode=passthrough \
 		--boot $(VM_BOOT) \
 		--os-variant $(OS_VARIANT) \
 		--network none \
