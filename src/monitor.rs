@@ -1,8 +1,8 @@
+use crate::logger::IronDomeLogger;
+
 use std::path::PathBuf;
 
 use anyhow::Result;
-
-use crate::logger::IronDomeLogger;
 
 pub trait PlatformMonitor {
     fn init(logger: &IronDomeLogger, target_paths: &[PathBuf]) -> Result<Self>
