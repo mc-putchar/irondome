@@ -113,7 +113,7 @@ vm-install: isofs $(VM_CLOUDIMG)	## Install VM from CloudImg
 		--import \
 		--noautoconsole
 
-isofs:
+isofs: $(SSH_KEY)
 	sed "s|<SSH_KEY>|$$(cat $(SSH_KEY))|g" host/user-data.yaml > "$(USER_DATA)"
 	sed $(SED_FLAG) "s|<PASSWD_HASH>|$$(echo 'irondome' | openssl passwd -6 -stdin)|g" "$(USER_DATA)"
 	docker run --rm -v $(PWD)/host:/data alpine sh -c \
@@ -132,3 +132,7 @@ $(ISO_DIR) $(VM_IMGDIR):
 $(ISO_FILE): | $(ISO_DIR)
 	@echo "Downloading ISO image..."
 	@wget -O $@ $(ISO_URL)
+
+$(SSH_KEY):
+	ssh-keygen -t ed25519 -C "irondome" -N "" -f $@ -q
+	ssh-add $@
