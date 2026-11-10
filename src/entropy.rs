@@ -1,5 +1,3 @@
-
-
 pub fn calculate_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;

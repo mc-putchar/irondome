@@ -1,9 +1,9 @@
 use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::OpenOptionsExt;
-use std::io::Write;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 const PID_FILE_PATH: &str = "/run/irondome.pid";
 
@@ -64,9 +64,7 @@ fn acquire_pid_lock(pid_path: &str) -> Result<File> {
         .mode(0o640)
         .open(pid_path)?;
 
-    let ret = unsafe {
-        libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB)
-    };
+    let ret = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
     if ret < 0 {
         return Err(anyhow!("Another instance of irondome is already running"));
     }

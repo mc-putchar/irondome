@@ -1,4 +1,4 @@
-use std::fs::{create_dir_all, OpenOptions};
+use std::fs::{OpenOptions, create_dir_all};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -99,6 +99,7 @@ impl IronDomeLogger {
         let _ = self.log(
             LogLevel::Event,
             "MONITOR",
-            format!("PID {} touched {:?} (mask: {:#?})", pid, path, mask).as_str());
+            format!("PID {} touched {:?} (mask: {:#?})", pid, path, mask).as_str(),
+        );
     }
 }

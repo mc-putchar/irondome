@@ -3,10 +3,10 @@ use crate::logger::IronDomeLogger;
 use super::PlatformMonitor;
 
 use std::ffi::CString;
+use std::fs;
 use std::io::{self, Error};
 use std::os::fd::RawFd;
 use std::path::PathBuf;
-use std::fs;
 
 use anyhow::{Result, anyhow};
 use walkdir::WalkDir;
@@ -34,7 +34,7 @@ impl PlatformMonitor for LinuxMonitor {
         for target_path in target_paths {
             let flags = libc::FAN_MARK_ADD;
             let mut mask: u64 = libc::FAN_ACCESS | libc::FAN_CLOSE_WRITE | libc::FAN_MODIFY;
-            if target_path.is_dir(){
+            if target_path.is_dir() {
                 mask |= libc::FAN_EVENT_ON_CHILD;
                 for entry in WalkDir::new(target_path) {
                     let entry = &entry.unwrap().into_path();
@@ -55,7 +55,11 @@ impl PlatformMonitor for LinuxMonitor {
         let meta_size = size_of::<libc::fanotify_event_metadata>();
 
         let len = unsafe {
-            libc::read(self.fd, buf.0.as_mut_ptr() as *mut libc::c_void, buf.0.len())
+            libc::read(
+                self.fd,
+                buf.0.as_mut_ptr() as *mut libc::c_void,
+                buf.0.len(),
+            )
         };
         if len < 0 {
             let err = Error::last_os_error();
@@ -70,9 +74,8 @@ impl PlatformMonitor for LinuxMonitor {
         let total = len as usize;
 
         while offset + meta_size <= total {
-            let meta= unsafe {
-                &*(buf.0.as_ptr().add(offset) as *const libc::fanotify_event_metadata)
-            };
+            let meta =
+                unsafe { &*(buf.0.as_ptr().add(offset) as *const libc::fanotify_event_metadata) };
             if meta.vers != libc::FANOTIFY_METADATA_VERSION as u8 {
                 panic!("Mismatched fanotify metadata version");
             }
@@ -103,14 +106,26 @@ impl Drop for LinuxMonitor {
     }
 }
 
-fn watch_path(logger: &IronDomeLogger, fd: i32, target_path: &PathBuf, flags: u32, mask: u64) -> Result<()> {
+fn watch_path(
+    logger: &IronDomeLogger,
+    fd: i32,
+    target_path: &PathBuf,
+    flags: u32,
+    mask: u64,
+) -> Result<()> {
     let c_path = CString::new(target_path.to_str().unwrap())?;
 
     let ret = unsafe { libc::fanotify_mark(fd, flags, mask, libc::AT_FDCWD, c_path.as_ptr()) };
     if ret == -1 {
         unsafe { libc::close(fd) };
         let err = Error::last_os_error();
-        logger.system_error(format!("failed to add watch on the path specified: {}", err.to_string()).as_str());
+        logger.system_error(
+            format!(
+                "failed to add watch on the path specified: {}",
+                err.to_string()
+            )
+            .as_str(),
+        );
         Err(anyhow!(err))
     } else {
         Ok(())
