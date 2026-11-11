@@ -27,7 +27,7 @@ impl PlatformMonitor for LinuxMonitor {
     fn init(logger: &IronDomeLogger, target_paths: &[PathBuf]) -> Result<Self> {
         let fd = unsafe {
             libc::fanotify_init(
-                libc::FAN_CLASS_NOTIF | libc::FAN_CLOEXEC | libc::FAN_UNLIMITED_MARKS,
+                libc::FAN_CLASS_NOTIF | libc::FAN_CLOEXEC,
                 (libc::O_RDONLY | libc::O_LARGEFILE | libc::O_CLOEXEC) as u32,
             )
         };

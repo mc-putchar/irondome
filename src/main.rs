@@ -54,7 +54,7 @@ fn get_target_paths(args: &[&str]) -> Result<Vec<PathBuf>> {
         let path = Path::new(arg)
             .canonicalize()
             .with_context(|| format!("Path '{}' is not accessible", arg))?;
-        println!("Monitoring: {:#?}", path);
+        println!("Watching path: {:?}", path);
         paths.push(path);
     }
 
