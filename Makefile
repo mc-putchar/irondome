@@ -66,8 +66,11 @@ help:	## Display this helpful message
 		/^##@/ { printf "\n${CYA}%s${NC}\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 	@echo ""
 
-install:	## Install Iron Dome
-	cargo install --path .
+build:	## Build Iron Dome
+	CARGO_TARGET_DIR=~/target cargo build --release
+
+install: build	## Install Iron Dome
+	sudo cp ~/target/release/irondome $(DESTDIR)
 
 clean:	## Clean the project
 	$(info Cleaning up...)
