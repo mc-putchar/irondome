@@ -1,4 +1,6 @@
-use crate::logger::IronDomeLogger;
+use crate::entropy::EntropyTracker;
+use crate::logger::{IronDomeLogger, LOG_PATH};
+use crate::telemetry::TelemetryTracker;
 
 use super::PlatformMonitor;
 
@@ -17,6 +19,8 @@ struct AlignedBuf([u8; 4096]);
 
 pub struct LinuxMonitor {
     fd: i32,
+    entropy_tracker: EntropyTracker,
+    telemetry_tracker: TelemetryTracker,
 }
 
 impl PlatformMonitor for LinuxMonitor {
@@ -32,33 +36,51 @@ impl PlatformMonitor for LinuxMonitor {
             return Err(anyhow!(Error::last_os_error()));
         }
 
+        let mut entropy_tracker = EntropyTracker::new();
+        let telemetry_tracker = TelemetryTracker::new();
+
         for target_path in target_paths {
             let flags = libc::FAN_MARK_ADD;
-            let mut mask: u64 =
-                libc::FAN_ACCESS | libc::FAN_CLOSE_WRITE | libc::FAN_MODIFY | libc::FAN_DELETE_SELF;
+            let mut mask: u64 = libc::FAN_ACCESS | libc::FAN_CLOSE_WRITE | libc::FAN_MODIFY;
 
             if target_path.is_dir() {
-                mask |= libc::FAN_EVENT_ON_CHILD | libc::FAN_CREATE | libc::FAN_DELETE;
+                mask |= libc::FAN_EVENT_ON_CHILD | libc::FAN_ONDIR;
                 for entry in WalkDir::new(target_path).follow_links(true) {
                     match entry {
                         Ok(entry) => {
-                            if entry.file_type().is_dir() {
-                                let _ = watch_path(logger, fd, &entry.into_path(), flags, mask);
+                            let path = entry.into_path();
+
+                            if path.is_dir() {
+                                if let Err(e) = watch_path(logger, fd, &path, flags, mask) {
+                                    logger.system_warn(&format!(
+                                        "could not watch directory {:?}: {}",
+                                        path, e
+                                    ));
+                                }
+                            } else if path.is_file() {
+                                entropy_tracker.seed_file(path);
                             }
                         }
                         Err(e) => {
-                            logger.system_error(&format!("could not access directory entry: {e}"))
+                            logger.system_warn(&format!("could not access directory entry: {e}"))
                         }
                     }
                 }
-                // TODO: if a new subdirectory is created inside one of these after init,
-                // catch the event and also mark that subdirectory
             } else {
-                let _ = watch_path(logger, fd, target_path, flags, mask);
+                watch_path(logger, fd, target_path, flags, mask)?;
+                if target_path.is_file() {
+                    entropy_tracker.seed_file(target_path.clone());
+                }
             }
         }
 
-        Ok(LinuxMonitor { fd })
+        logger.system_info("baseline entropy indexing completed.");
+
+        Ok(LinuxMonitor {
+            fd,
+            entropy_tracker,
+            telemetry_tracker,
+        })
     }
 
     fn poll_events(&mut self, logger: &IronDomeLogger) -> Result<()> {
@@ -100,8 +122,7 @@ impl PlatformMonitor for LinuxMonitor {
             }
 
             if meta.fd >= 0 {
-                handle_event(logger, meta.fd, meta.pid, meta.mask);
-
+                self.handle_event(logger, meta.fd, meta.pid, meta.mask);
                 unsafe { libc::close(meta.fd) };
             }
 
@@ -109,6 +130,84 @@ impl PlatformMonitor for LinuxMonitor {
         }
 
         Ok(())
+    }
+}
+
+impl LinuxMonitor {
+    fn handle_event(&mut self, logger: &IronDomeLogger, fd: RawFd, pid: i32, mask: u64) {
+        if pid as u32 == std::process::id() {
+            return;
+        }
+
+        let proc_fd_path = format!("/proc/self/fd/{}", fd);
+        let Ok(real_path) = fs::read_link(&proc_fd_path) else {
+            return;
+        };
+
+        if real_path == Path::new(LOG_PATH) {
+            return;
+        }
+
+        if (mask & libc::FAN_ONDIR) != 0 {
+            self.watch_new_subdir(logger, &real_path);
+            return;
+        }
+
+        if (mask & libc::FAN_ACCESS) != 0 {
+            self.telemetry_tracker
+                .on_file_access(logger, pid, &real_path);
+        }
+
+        if (mask & libc::FAN_CLOSE_WRITE) != 0 {
+            let entropy_alert = match self.entropy_tracker.evaluate_fd(&real_path, fd) {
+                Ok(Some(alert)) => {
+                    let msg = match alert.old_entropy {
+                        Some(old) => format!(
+                            "PID {} modified {:?}: entropy change from {:.2} to {:.2} (delta: {:.2} bits/byte)",
+                            pid, alert.path, old, alert.new_entropy, alert.delta
+                        ),
+                        None => format!(
+                            "PID {} wrote high entropy file {:?}: {:.2} bits/byte",
+                            pid, alert.path, alert.new_entropy
+                        ),
+                    };
+                    logger.alert("ENTROPY", &msg);
+                    Some(alert)
+                }
+                Ok(None) => None,
+                Err(e) => {
+                    logger.system_warn(&format!(
+                        "failed to compute entropy for {:?}: {}",
+                        real_path, e
+                    ));
+                    None
+                }
+            };
+
+            self.telemetry_tracker
+                .on_file_write(logger, pid, &real_path, entropy_alert.as_ref());
+        } else if (mask & libc::FAN_MODIFY) != 0 {
+            self.telemetry_tracker
+                .on_file_write(logger, pid, &real_path, None);
+        }
+    }
+
+    fn watch_new_subdir(&mut self, logger: &IronDomeLogger, parent_dir: &Path) {
+        let flags = libc::FAN_MARK_ADD;
+        let mask: u64 = libc::FAN_ACCESS
+            | libc::FAN_CLOSE_WRITE
+            | libc::FAN_MODIFY
+            | libc::FAN_EVENT_ON_CHILD
+            | libc::FAN_ONDIR;
+
+        if let Ok(entries) = fs::read_dir(parent_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let _ = watch_path(logger, self.fd, &path, flags, mask);
+                }
+            }
+        }
     }
 }
 
@@ -134,16 +233,5 @@ fn watch_path(
         Err(anyhow!(err))
     } else {
         Ok(())
-    }
-}
-
-fn handle_event(logger: &IronDomeLogger, fd: RawFd, pid: i32, mask: u64) {
-    if pid as u32 == std::process::id() {
-        return;
-    }
-
-    let proc_fd_path = format!("/proc/self/fd/{}", fd);
-    if let Ok(real_path) = fs::read_link(&proc_fd_path) {
-        logger.event(pid, real_path, mask);
     }
 }

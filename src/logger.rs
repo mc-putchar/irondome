@@ -103,4 +103,8 @@ impl IronDomeLogger {
             format!("PID {} touched {:?} (mask: {:#?})", pid, path, mask).as_str(),
         );
     }
+
+    pub fn alert(&self, category: &str, message: &str) {
+        let _ = self.log(LogLevel::Alert, category, message);
+    }
 }

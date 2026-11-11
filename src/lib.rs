@@ -4,3 +4,4 @@ pub mod logger;
 pub mod memory;
 pub mod monitor;
 pub mod signals;
+pub mod telemetry;
