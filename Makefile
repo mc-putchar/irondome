@@ -77,10 +77,6 @@ clean:	## Clean the project
 	-ssh-keygen -f "$$HOME/.ssh/known_hosts" -R "[localhost]:$(HOST_SSH_PORT)" || true
 	-cargo clean
 
-container:	## Run the project in containerized environment
-	docker build . -t $(NAME)
-	docker run -dt $(NAME) $(PATHS);tail -f /dev/null
-
 start:	## Start Host VM
 	virsh $(SESSION) start $(VM_NAME)
 
@@ -110,8 +106,7 @@ vm-install: isofs $(VM_CLOUDIMG)	## Install VM from CloudImg
 		--qemu-commandline="user,id=net0,$(PORT_FORWARDING)" \
 		--qemu-commandline="-device" \
 		--qemu-commandline="virtio-net-pci,netdev=net0" \
-		--import \
-		--noautoconsole
+		--import
 
 isofs: $(SSH_KEY)
 	sed "s|<SSH_KEY>|$$(cat $(SSH_KEY))|g" host/user-data.yaml > "$(USER_DATA)"
