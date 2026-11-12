@@ -52,7 +52,7 @@ impl EntropyTracker {
         let new_entropy = calculate_fd_entropy(fd)?;
 
         if self.baselines.len() >= MAX_BASELINE_ENTRIES && !self.baselines.contains_key(path) {
-            self.baselines.clear(); // ??
+            self.evict_stale_or_half();
         }
 
         let old_entropy = self.baselines.insert(path.to_path_buf(), new_entropy);
@@ -82,6 +82,27 @@ impl EntropyTracker {
         }
 
         Ok(None)
+    }
+
+    pub fn evict_stale_or_half(&mut self) {
+        self.baselines.retain(|p, _| p.exists());
+        if self.baselines.len() >= MAX_BASELINE_ENTRIES {
+            let mut keep = false;
+            self.baselines.retain(|_, _| {
+                keep = !keep;
+                keep
+            });
+        }
+        self.baselines.shrink_to_fit();
+    }
+
+    pub fn reclaim_memory(&mut self) {
+        self.baselines.clear();
+        self.baselines.shrink_to(1024);
+    }
+
+    pub fn cached_count(&self) -> usize {
+        self.baselines.len()
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::entropy::EntropyTracker;
 use crate::logger::{IronDomeLogger, LOG_PATH};
+use crate::memory::{heap_usage_bytes, is_memory_pressure, rss_usage_bytes};
 use crate::telemetry::TelemetryTracker;
 
 use super::PlatformMonitor;
@@ -133,6 +134,17 @@ impl PlatformMonitor for LinuxMonitor {
             }
 
             offset += meta.event_len as usize;
+        }
+
+        if is_memory_pressure() {
+            let heap_mb = heap_usage_bytes() / (1024 * 1024);
+            let rss_mb = rss_usage_bytes() / (1024 * 1024);
+            logger.system_warn(&format!(
+                "Memory pressure detected (heap: {} MB, rss: {} MB). Reclaiming caches",
+                heap_mb, rss_mb
+            ));
+            self.entropy_tracker.reclaim_memory();
+            self.telemetry_tracker.reclaim_memory();
         }
 
         Ok(())

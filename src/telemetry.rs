@@ -289,9 +289,14 @@ impl TelemetryTracker {
             self.pids
                 .retain(|pid, _| Path::new(&format!("/proc/{}", pid)).exists());
             if self.pids.len() >= MAX_TRACKED_PIDS {
-                self.pids.clear();
+                self.reclaim_memory();
             }
         }
+    }
+
+    pub fn reclaim_memory(&mut self) {
+        self.pids.clear();
+        self.pids.shrink_to(256);
     }
 }
 
