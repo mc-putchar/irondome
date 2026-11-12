@@ -6,7 +6,10 @@ use std::os::unix::fs::OpenOptionsExt;
 
 use anyhow::{Result, anyhow};
 
+#[cfg(target_os = "linux")]
 const PID_FILE_PATH: &str = "/run/irondome.pid";
+#[cfg(not(target_os = "linux"))]
+const PID_FILE_PATH: &str = "/var/run/irondome.pid";
 
 pub fn is_root() -> bool {
     unsafe { libc::getuid() == 0 }

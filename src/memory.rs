@@ -1,5 +1,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
+#[allow(unused_imports)]
 use std::fs::File;
+#[allow(unused_imports)]
 use std::io::Read;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -50,19 +52,33 @@ pub fn heap_usage_bytes() -> usize {
 
 /// Check total process Resident Set Size (RSS) via procfs
 pub fn rss_usage_bytes() -> usize {
-    let mut buf = [0_u8; 64];
-
-    if let Ok(mut file) = File::open("/proc/self/statm")
-        && let Ok(n) = file.read(&mut buf)
-        && let Ok(s) = std::str::from_utf8(&buf[..n])
-        && let Some(rss_pages_str) = s.split_whitespace().nth(1)
-        && let Ok(pages) = rss_pages_str.parse::<usize>()
+    #[cfg(target_os = "linux")]
     {
-        let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize };
-        return pages * page_size;
+        let mut buf = [0_u8; 64];
+
+        if let Ok(mut file) = File::open("/proc/self/statm")
+            && let Ok(n) = file.read(&mut buf)
+            && let Ok(s) = std::str::from_utf8(&buf[..n])
+            && let Some(rss_pages_str) = s.split_whitespace().nth(1)
+            && let Ok(pages) = rss_pages_str.parse::<usize>()
+        {
+            let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize };
+            return pages * page_size;
+        }
+        0
     }
 
-    0
+    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    {
+        let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+        if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) } == 0 {
+            #[cfg(target_os = "macos")]
+            return usage.ru_maxrss as usize; // macOS reports ru_maxrss in bytes
+            #[cfg(target_os = "freebsd")]
+            return (usage.ru_maxrss as usize) * 1024; // FreeBSD reports ru_maxrss in KB
+        }
+        0
+    }
 }
 
 pub fn is_memory_pressure() -> bool {

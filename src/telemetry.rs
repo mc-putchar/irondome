@@ -416,6 +416,7 @@ fn detect_crypto_signature(pid: i32, comm: &str) -> Option<CryptoSignature> {
 mod tests {
     use super::*;
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn test_proc_self_introspection() {
         let my_pid = std::process::id() as i32;
