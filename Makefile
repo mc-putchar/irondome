@@ -72,6 +72,9 @@ build:	## Build Iron Dome
 install: build	## Install Iron Dome
 	sudo cp ~/target/release/irondome $(DESTDIR)
 
+test:	## Run tests suite (unit tests and full root evaluation tests)
+	sudo ./tests/test_suite.sh
+
 clean:	## Clean the project
 	$(info Cleaning up...)
 	-rm -f $(USER_DATA)

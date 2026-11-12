@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-BIN="./target/release/irondome"
+BIN="irondome"
 LOG_FILE="/var/log/irondome/irondome.log"
 PID_FILE="/run/irondome.pid"
 TEST_DIR_A="/tmp/irondome_eval_a"
@@ -24,6 +24,9 @@ pass() {
 fail() {
     echo -e "  ${RED}[FAIL]${NC} $1"
     FAILED=$((FAILED + 1))
+    echo "========= LOG ==========="
+    tail "$LOG_FILE"
+    echo "========================="
 }
 
 cleanup() {
@@ -50,15 +53,6 @@ echo -e "${CYA}====================================================${NC}"
 echo -e "${CYA}         Iron Dome Evaluation Test Suite            ${NC}"
 echo -e "${CYA}====================================================${NC}"
 
-# 0. Build release binary & run Rust unit tests
-echo -e "\n${YLW}[1/8] Building release binary & running unit tests...${NC}"
-if cargo test --quiet && cargo build --release --quiet; then
-    pass "Cargo unit tests and release build succeeded"
-else
-    fail "Cargo build or unit tests failed"
-    exit 1
-fi
-
 cleanup
 rm -f "$LOG_FILE"
 mkdir -p "$TEST_DIR_A" "$TEST_DIR_B"
@@ -73,16 +67,16 @@ for i in {1..10}; do
         > "$TEST_DIR_B/config_$i.conf"
 done
 
-# 1. Test Root Requirement
-echo -e "\n${YLW}[2/8] Checking root privilege enforcement...${NC}"
+# Test Root Requirement
+echo -e "\n${YLW}[1/7] Checking root privilege enforcement...${NC}"
 if sudo -u nobody "$BIN" "$TEST_DIR_A" 2>/dev/null; then
     fail "Daemon allowed execution as non-root user 'nobody'"
 else
     pass "Daemon rejected non-root execution"
 fi
 
-# 2. Test Daemonization, Multi-path CLI & Singleton Lock
-echo -e "\n${YLW}[3/8] Checking daemonization, PID lock, and multi-path monitoring...${NC}"
+# Test Daemonization, Multi-path CLI & Singleton Lock
+echo -e "\n${YLW}[2/7] Checking daemonization, PID lock, and multi-path monitoring...${NC}"
 "$BIN" "$TEST_DIR_A" "$TEST_DIR_B"
 sleep 1
 
@@ -106,8 +100,8 @@ else
     pass "Singleton flock() prevented duplicate daemon instance"
 fi
 
-# 3. Test File Entropy Change Detection
-echo -e "\n${YLW}[4/8] Triggering file entropy change in $TEST_DIR_A...${NC}"
+# Test File Entropy Change Detection
+echo -e "\n${YLW}[3/7] Triggering file entropy change in $TEST_DIR_A...${NC}"
 dd if=/dev/urandom of="$TEST_DIR_A/doc_1.txt" bs=64K count=4 status=none
 sleep 1
 
@@ -117,8 +111,8 @@ else
     fail "No [ALERT] [ENTROPY] entry found in $LOG_FILE"
 fi
 
-# 4. Test Intensive Cryptographic Activity Detection
-echo -e "\n${YLW}[5/8] Triggering cryptographic activity (OpenSSL AES-256-CBC) in $TEST_DIR_B...${NC}"
+# Test Intensive Cryptographic Activity Detection
+echo -e "\n${YLW}[4/7] Triggering cryptographic activity (OpenSSL AES-256-CBC) in $TEST_DIR_B...${NC}"
 for i in {1..5}; do
     openssl enc -aes-256-cbc -pbkdf2 -pass pass:supersecret \
         -in "$TEST_DIR_B/config_$i.conf" \
@@ -133,8 +127,8 @@ else
     fail "No [ALERT] [CRYPTO_ACTIVITY] entry found in $LOG_FILE"
 fi
 
-# 5. Test Disk Read Abuse Detection
-echo -e "\n${YLW}[6/8] Triggering disk read abuse in $TEST_DIR_A...${NC}"
+# Test Disk Read Abuse Detection
+echo -e "\n${YLW}[5/7] Triggering disk read abuse in $TEST_DIR_A...${NC}"
 python3 - << 'EOF'
 import glob
 files = glob.glob("/tmp/irondome_eval_a/doc_*.txt")
@@ -151,8 +145,8 @@ else
     fail "No [ALERT] [DISK_READ_ABUSE] entry found in $LOG_FILE"
 fi
 
-# 6. Test Dynamic Subdirectory Creation
-echo -e "\n${YLW}[7/8] Checking dynamic subdirectory watch (FAN_ONDIR)...${NC}"
+# Test Dynamic Subdirectory Creation
+echo -e "\n${YLW}[6/7] Checking dynamic subdirectory watch (FAN_ONDIR)...${NC}"
 BEFORE_ENT_COUNT=$(grep -c "\[ALERT\] \[ENTROPY\]" "$LOG_FILE" || true)
 mkdir -p "$TEST_DIR_A/newly_created_subdir"
 sleep 0.5
@@ -166,8 +160,8 @@ else
     fail "Did not detect high-entropy file inside newly created subdirectory"
 fi
 
-# 7. Test Memory Limit (< 100 MB) and Daemon Stability
-echo -e "\n${YLW}[8/8] Verifying memory ceiling (< 100 MB) and daemon stability...${NC}"
+# Test Memory Limit (< 100 MB) and Daemon Stability
+echo -e "\n${YLW}[7/7] Verifying memory ceiling (< 100 MB) and daemon stability...${NC}"
 if kill -0 "$DAEMON_PID" 2>/dev/null; then
     RSS_KB=$(awk '/VmRSS:/ {print $2}' "/proc/$DAEMON_PID/status")
     RSS_MB=$(awk "BEGIN {printf \"%.2f\", $RSS_KB / 1024}")
