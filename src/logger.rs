@@ -10,6 +10,7 @@ pub const LOG_PATH: &str = "/var/log/irondome/irondome.log";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogLevel {
+    Debug,
     Info,
     Warning,
     Error,
@@ -20,6 +21,7 @@ pub enum LogLevel {
 impl LogLevel {
     fn as_str(&self) -> &'static str {
         match self {
+            LogLevel::Debug => "DEBUG",
             LogLevel::Info => "INFO",
             LogLevel::Warning => "WARN",
             LogLevel::Error => "ERROR",
@@ -112,6 +114,10 @@ impl IronDomeLogger {
 
     pub fn alert(&self, category: &str, message: &str) {
         let _ = self.log(LogLevel::Alert, category, message);
+    }
+
+    pub fn debug(&self, message: &str) {
+        let _ = self.log(LogLevel::Debug, "", message);
     }
 }
 
