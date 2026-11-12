@@ -5,12 +5,14 @@ use crate::telemetry::TelemetryTracker;
 
 use super::PlatformMonitor;
 
+use std::collections::HashSet;
 use std::ffi::CString;
 use std::fs;
 use std::io::{self, Error};
 use std::os::fd::RawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Result, anyhow};
 use walkdir::WalkDir;
@@ -20,9 +22,11 @@ struct AlignedBuf([u8; 4096]);
 
 pub struct LinuxMonitor {
     fd: i32,
-    target_paths: Vec<PathBuf>,
     entropy_tracker: EntropyTracker,
     telemetry_tracker: TelemetryTracker,
+    target_paths: Vec<PathBuf>,
+    backup_root: PathBuf,
+    quarantined: Arc<Mutex<HashSet<PathBuf>>>,
 }
 
 impl PlatformMonitor for LinuxMonitor {
@@ -139,7 +143,7 @@ impl PlatformMonitor for LinuxMonitor {
 
 impl LinuxMonitor {
     fn is_monitored_path(&self, path: &Path) -> bool {
-        if path == Path::new(LOG_PATH) {
+        if path == Path::new(LOG_PATH) || path.starts_with(&self.backup_root) {
             return false;
         }
         self.target_paths
@@ -169,6 +173,10 @@ impl LinuxMonitor {
         if (mask & libc::FAN_CLOSE_WRITE) != 0 {
             let entropy_alert = match self.entropy_tracker.evaluate_fd(&real_path, fd) {
                 Ok(Some(alert)) => {
+                    if let Ok(mut q) = self.quarantined.lock() {
+                        q.insert(real_path.clone());
+                    }
+
                     let msg = match alert.old_entropy {
                         Some(old) => format!(
                             "PID {} modified {:?}: entropy change from {:.2} to {:.2} (delta: {:.2} bits/byte)",

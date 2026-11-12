@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod daemon;
 pub mod entropy;
 pub mod logger;
