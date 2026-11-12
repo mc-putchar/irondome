@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 
+const NO_ARGS_MESSAGE: &str = "No arguments provided.
+Watching default paths: /etc, /home, /var/www.";
 const DEFAULT_TARGET_PATHS: &[&str] = &["/etc", "/home", "/var/www"];
 
 fn main() -> Result<()> {
@@ -21,6 +23,9 @@ fn main() -> Result<()> {
 
     let args: Vec<String> = env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    if args.is_empty() {
+        println!("{}", NO_ARGS_MESSAGE);
+    }
 
     let target_paths: Vec<PathBuf> = get_target_paths(&args)?;
     if target_paths.is_empty() {
