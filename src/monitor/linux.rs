@@ -4,6 +4,7 @@ use crate::telemetry::TelemetryTracker;
 
 use super::PlatformMonitor;
 
+use std::collections::HashSet;
 use std::ffi::CString;
 use std::fs;
 use std::io::{self, Error};
@@ -19,6 +20,7 @@ struct AlignedBuf([u8; 4096]);
 
 pub struct LinuxMonitor {
     fd: i32,
+    watched_dirs: HashSet<PathBuf>,
     entropy_tracker: EntropyTracker,
     telemetry_tracker: TelemetryTracker,
 }
@@ -36,6 +38,7 @@ impl PlatformMonitor for LinuxMonitor {
             return Err(anyhow!(Error::last_os_error()));
         }
 
+        let mut watched_dirs = HashSet::new();
         let mut entropy_tracker = EntropyTracker::new();
         let telemetry_tracker = TelemetryTracker::new();
 
@@ -56,6 +59,8 @@ impl PlatformMonitor for LinuxMonitor {
                                         "could not watch directory {:?}: {}",
                                         path, e
                                     ));
+                                } else {
+                                    watched_dirs.insert(path);
                                 }
                             } else if path.is_file() {
                                 entropy_tracker.seed_file(path);
@@ -78,6 +83,7 @@ impl PlatformMonitor for LinuxMonitor {
 
         Ok(LinuxMonitor {
             fd,
+            watched_dirs,
             entropy_tracker,
             telemetry_tracker,
         })
@@ -203,8 +209,10 @@ impl LinuxMonitor {
         if let Ok(entries) = fs::read_dir(parent_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_dir() {
+                if path.is_dir() && !self.watched_dirs.contains(&path) {
                     let _ = watch_path(logger, self.fd, &path, flags, mask);
+                } else if path.is_file() {
+                    self.entropy_tracker.seed_file(path);
                 }
             }
         }
