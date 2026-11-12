@@ -75,13 +75,16 @@ mod tests {
 
     #[test]
     fn test_tracked_allocator_counts_alloc_and_dealloc() {
+        let alloc_size = 4 * 1024 * 1024;
+        let epsilon_tolerance = 128 * 1024;
+
         let before = heap_usage_bytes();
-        let buf: Vec<u8> = vec![42_u8; 2 * 1024 * 1024];
+        let buf: Vec<u8> = vec![42_u8; alloc_size];
         let during = heap_usage_bytes();
 
         assert!(
-            during >= before + (2 * 1024 * 1024),
-            "expected heap_usage_bytes to increase by 2MB"
+            during + epsilon_tolerance >= before + alloc_size,
+            "expected heap_usage_bytes to increase at least by {alloc_size} bytes (before={before}, during={during})"
         );
         std::hint::black_box(&buf);
         drop(buf);

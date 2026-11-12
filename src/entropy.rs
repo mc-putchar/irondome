@@ -190,3 +190,34 @@ pub fn is_sus_entropy_change(old: f64, new: f64) -> bool {
 
     delta >= ENTROPY_DELTA_THRESHOLD || (delta >= 0.6 && old < 7.2 && new >= HIGH_ENTROPY_THRESHOLD)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_entropy_boundary_values() {
+        assert_eq!(calculate_entropy(&[]), 0.0);
+
+        let zeroes = vec![0_u8; 4096];
+        assert!(calculate_entropy(&zeroes).abs() < 1e-9);
+
+        let alternating: Vec<u8> = (0..4096).map(|i| (i & 1) as u8).collect();
+        assert!((calculate_entropy(&alternating) - 1.0).abs() < 1e-9);
+
+        let uniform: Vec<u8> = (0..65536).map(|i| (i & 0xFF) as u8).collect();
+        assert!((calculate_entropy(&uniform) - 8.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_sus_entropy_change_threshold() {
+        // average plaintext value should not trigger
+        assert!(!is_sus_entropy_change(4.1, 4.4));
+        // plaintext encrypted in place should trigger
+        assert!(is_sus_entropy_change(4.3, 7.95));
+        // moderate jump into the high entropy zone should trigger
+        assert!(is_sus_entropy_change(7.0, 7.85));
+        // already encrypted archive should not trigger
+        assert!(!is_sus_entropy_change(7.9, 7.95));
+    }
+}

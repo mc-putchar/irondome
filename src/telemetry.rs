@@ -411,3 +411,33 @@ fn detect_crypto_signature(pid: i32, comm: &str) -> Option<CryptoSignature> {
 
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_proc_self_introspection() {
+        let my_pid = std::process::id() as i32;
+
+        let comm = read_proc_comm(my_pid);
+        assert!(!comm.is_empty() && comm != "unknown");
+
+        let io = read_proc_io(my_pid).expect("should read /proc/self/io");
+        assert!(io.syscr > 0 || io.rchar > 0);
+
+        let ticks = read_proc_cpu_ticks(my_pid);
+        assert!(ticks.is_some());
+    }
+
+    #[test]
+    fn test_alert_cooldown_logic() {
+        let now = Instant::now();
+        assert!(can_alert(&None, now));
+        assert!(!can_alert(&Some(now), now + Duration::from_secs(1)));
+        assert!(can_alert(
+            &Some(now),
+            now + ALERT_COOLDOWN + Duration::from_millis(10)
+        ));
+    }
+}
