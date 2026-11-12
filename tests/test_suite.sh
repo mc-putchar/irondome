@@ -174,6 +174,21 @@ else
     fail "Daemon crashed unexpectedly during stress tests"
 fi
 
+# Test bonus Incremental Backups
+echo -e "\n${YLW}[Bonus] Verifying incremental backups in HOME directory...${NC}"
+USER_HOME=$(getent passwd "${SUDO_USER:-root}" | cut -d: -f6)
+BACKUP_DIR="$USER_HOME/irondome_backups"
+
+echo "Incremental backup test payload" > "$TEST_DIR_A/bonus_incremental.txt"
+sleep 3
+
+if [[ -L "$BACKUP_DIR/latest" ]] && find "$BACKUP_DIR/latest" -name "bonus_incremental.txt" | grep -q "bonus_incremental.txt"; then
+    SNAP_COUNT=$(find "$BACKUP_DIR" -maxdepth 1 -type d -name "snapshot_*" | wc -l)
+    pass "Incremental backup verified in $BACKUP_DIR ($SNAP_COUNT snapshots created)"
+else
+    fail "Incremental backup file 'bonus_incremental.txt' not found in $BACKUP_DIR/latest"
+fi
+
 echo -e "\n${CYA}--- Sample Alerts from $LOG_FILE ---${NC}"
 grep "\[ALERT\]" "$LOG_FILE" | tail -n 8 || true
 
