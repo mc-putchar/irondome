@@ -35,16 +35,23 @@ pub struct IronDomeLogger {
 }
 
 impl IronDomeLogger {
-    /// Initializes the logger, creating directories and the log file if missing.
     pub fn init() -> Result<Self> {
-        if !Path::new(LOG_DIR).exists() {
-            create_dir_all(LOG_DIR)?;
+        Self::init_with_path(Path::new(LOG_PATH))
+    }
+
+    /// Initializes the logger, creating directories and the log file if missing.
+    pub fn init_with_path(log_path: &Path) -> Result<Self> {
+        if let Some(parent) = log_path.parent()
+            && !parent.as_os_str().is_empty()
+            && !parent.exists()
+        {
+            create_dir_all(parent)?;
         }
 
         let file = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(LOG_PATH)?;
+            .open(log_path)?;
 
         Ok(IronDomeLogger {
             file: Mutex::new(file),
