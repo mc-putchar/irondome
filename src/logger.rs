@@ -126,7 +126,7 @@ pub fn format_utc_iso8601(since_epoch: Duration) -> String {
     }
 
     format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02};{:02}.{:03}Z",
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
         tm.tm_year + 1900,
         tm.tm_mon + 1,
         tm.tm_mday,
@@ -135,4 +135,34 @@ pub fn format_utc_iso8601(since_epoch: Duration) -> String {
         tm.tm_sec,
         millis
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_timestamp_epoch_zero() {
+        let ts = format_utc_iso8601(Duration::from_secs(0));
+        assert_eq!(ts, "1970-01-01T00:00:00.000Z");
+    }
+
+    #[test]
+    fn test_logger_writes_standardized_lines() {
+        let tmp_path =
+            std::env::temp_dir().join(format!("irondome_log_test_{}.log", std::process::id()));
+        let _ = std::fs::remove_file(&tmp_path);
+
+        let logger = IronDomeLogger::init_with_path(&tmp_path).expect("failed to init logger");
+        logger.system_info("test initialized");
+        logger.alert("ENTROPY", "file /tmp/a.out randomized to 7.95");
+
+        let content = std::fs::read_to_string(&tmp_path).expect("failed to read test log");
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("[INFO ] [SYSTEM] test initialized"));
+        assert!(lines[1].contains("[ALERT] [ENTROPY] file /tmp/a.out randomized to 7.95"));
+
+        let _ = std::fs::remove_file(&tmp_path);
+    }
 }
