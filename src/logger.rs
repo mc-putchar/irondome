@@ -2,13 +2,13 @@ use std::fs::{OpenOptions, create_dir_all};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 
-const LOG_DIR: &str = "/var/log/irondome";
 pub const LOG_PATH: &str = "/var/log/irondome/irondome.log";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogLevel {
     Info,
     Warning,
@@ -35,6 +35,7 @@ pub struct IronDomeLogger {
 }
 
 impl IronDomeLogger {
+    /// Initializes the logger at the default path (`/var/log/irondome/irondome.log`)
     pub fn init() -> Result<Self> {
         Self::init_with_path(Path::new(LOG_PATH))
     }
@@ -58,26 +59,24 @@ impl IronDomeLogger {
         })
     }
 
-    /// Helper to fetch a simple ISO-like timestamp without external time crates
-    fn get_timestamp(&self) -> String {
-        let start = SystemTime::now();
-        let since_the_epoch = start.duration_since(UNIX_EPOCH).unwrap_or_default();
-        let secs = since_the_epoch.as_secs();
-
-        format!("{}", secs)
+    pub fn format_entry(d: Duration, level: LogLevel, component: &str, message: &str) -> String {
+        let timestamp = format_utc_iso8601(d);
+        format!(
+            "{} [{:<5}] [{}] {}\n",
+            timestamp,
+            level.as_str(),
+            component,
+            message
+        )
     }
 
     /// Writes a structured message to the log file.
     /// It returns a Result to allow the main loop to handle failures gracefully.
     pub fn log(&self, level: LogLevel, component: &str, message: &str) -> Result<()> {
-        let timestamp = self.get_timestamp();
-        let log_line = format!(
-            "[{}] [{}] [{}] {}\n",
-            timestamp,
-            level.as_str(),
-            component,
-            message
-        );
+        let since_epoch = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
+        let log_line = Self::format_entry(since_epoch, level, component, message);
 
         // Lock the file mutex to prevent log scrambling across threads/tasks
         let mut file_guard = self
@@ -114,4 +113,26 @@ impl IronDomeLogger {
     pub fn alert(&self, category: &str, message: &str) {
         let _ = self.log(LogLevel::Alert, category, message);
     }
+}
+
+/// Converts duration to ISO-8601 UTC string (`YYYY-MM-DDTHH:MM:SS.mmmZ`)
+pub fn format_utc_iso8601(since_epoch: Duration) -> String {
+    let secs = since_epoch.as_secs() as libc::time_t;
+    let millis = since_epoch.subsec_millis();
+
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::gmtime_r(&secs, &mut tm);
+    }
+
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02};{:02}.{:03}Z",
+        tm.tm_year + 1900,
+        tm.tm_mon + 1,
+        tm.tm_mday,
+        tm.tm_hour,
+        tm.tm_min,
+        tm.tm_sec,
+        millis
+    )
 }
