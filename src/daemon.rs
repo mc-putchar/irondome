@@ -49,10 +49,16 @@ pub fn daemonize() -> Result<File> {
         // Set file permissions
         libc::umask(0o027);
 
-        // Close standard descriptors to complete detach
-        libc::close(0);
-        libc::close(1);
-        libc::close(2);
+        // Redirect standard fds to /dev/null
+        let null_fd = libc::open(c"/dev/null".as_ptr(), libc::O_RDWR);
+        if null_fd >= 0 {
+            libc::dup2(null_fd, libc::STDIN_FILENO);
+            libc::dup2(null_fd, libc::STDOUT_FILENO);
+            libc::dup2(null_fd, libc::STDERR_FILENO);
+            if null_fd > 2 {
+                libc::close(null_fd);
+            }
+        }
     }
 
     pid_file.set_len(0)?;
