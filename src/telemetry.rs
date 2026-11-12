@@ -268,7 +268,7 @@ impl TelemetryTracker {
                 logger.alert(
                     "CRYPTO_ACTIVITY",
                     &format!(
-                        "Intensive encryption behavior by PID {} ({}) on {:?} (entropy {:.2} bits/byte, {} high-entropy writes",
+                        "Intensive encryption behavior by PID {} ({}) on {:?} (entropy {:.2} bits/byte, {} high-entropy writes)",
                         pid, state.comm, path, alert.new_entropy, state.high_entropy_writes.max(self.global_high_entropy_writes)
                     )
                 );
@@ -288,6 +288,9 @@ impl TelemetryTracker {
         if self.pids.len() >= MAX_TRACKED_PIDS {
             self.pids
                 .retain(|pid, _| Path::new(&format!("/proc/{}", pid)).exists());
+            if self.pids.len() >= MAX_TRACKED_PIDS {
+                self.pids.clear();
+            }
         }
     }
 }
