@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 
-const DEFAULT_TARGET_PATHS: &[&str] = &["/etc", "/home", "/var"];
+const DEFAULT_TARGET_PATHS: &[&str] = &["/etc", "/home", "/var/www"];
 
 fn main() -> Result<()> {
     if !is_root() {

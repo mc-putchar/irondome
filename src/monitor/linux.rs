@@ -27,7 +27,7 @@ impl PlatformMonitor for LinuxMonitor {
     fn init(logger: &IronDomeLogger, target_paths: &[PathBuf]) -> Result<Self> {
         let fd = unsafe {
             libc::fanotify_init(
-                libc::FAN_CLASS_NOTIF | libc::FAN_CLOEXEC,
+                libc::FAN_CLASS_NOTIF | libc::FAN_CLOEXEC | libc::FAN_UNLIMITED_MARKS,
                 (libc::O_RDONLY | libc::O_LARGEFILE | libc::O_CLOEXEC) as u32,
             )
         };
@@ -45,7 +45,7 @@ impl PlatformMonitor for LinuxMonitor {
 
             if target_path.is_dir() {
                 mask |= libc::FAN_EVENT_ON_CHILD | libc::FAN_ONDIR;
-                for entry in WalkDir::new(target_path).follow_links(true) {
+                for entry in WalkDir::new(target_path) {
                     match entry {
                         Ok(entry) => {
                             let path = entry.into_path();
