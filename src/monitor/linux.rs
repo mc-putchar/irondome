@@ -5,7 +5,6 @@ use crate::telemetry::TelemetryTracker;
 
 use super::PlatformMonitor;
 
-use std::collections::HashSet;
 use std::ffi::CString;
 use std::fs;
 use std::io::{self, Error};
@@ -21,7 +20,7 @@ struct AlignedBuf([u8; 4096]);
 
 pub struct LinuxMonitor {
     fd: i32,
-    watched_dirs: HashSet<PathBuf>,
+    target_paths: Vec<PathBuf>,
     entropy_tracker: EntropyTracker,
     telemetry_tracker: TelemetryTracker,
 }
@@ -39,42 +38,29 @@ impl PlatformMonitor for LinuxMonitor {
             return Err(anyhow!(Error::last_os_error()));
         }
 
-        let mut watched_dirs = HashSet::new();
         let mut entropy_tracker = EntropyTracker::new();
         let telemetry_tracker = TelemetryTracker::new();
 
+        let flags = libc::FAN_MARK_ADD | libc::FAN_MARK_MOUNT;
+        let mask: u64 = libc::FAN_ACCESS | libc::FAN_CLOSE_WRITE | libc::FAN_MODIFY;
+
         for target_path in target_paths {
-            let flags = libc::FAN_MARK_ADD;
-            let mut mask: u64 = libc::FAN_ACCESS | libc::FAN_CLOSE_WRITE | libc::FAN_MODIFY;
+            if let Err(e) = watch_path(logger, fd, target_path, flags, mask) {
+                logger.system_warn(&format!("could not watch path {:?}: {}", target_path, e));
 
-            if target_path.is_dir() {
-                mask |= libc::FAN_EVENT_ON_CHILD | libc::FAN_ONDIR;
-                for entry in WalkDir::new(target_path) {
-                    match entry {
-                        Ok(entry) => {
-                            let path = entry.into_path();
-
-                            if path.is_dir() {
-                                if let Err(e) = watch_path(logger, fd, &path, flags, mask) {
-                                    logger.system_warn(&format!(
-                                        "could not watch directory {:?}: {}",
-                                        path, e
-                                    ));
-                                } else {
-                                    watched_dirs.insert(path);
+                if target_path.is_dir() {
+                    for entry in WalkDir::new(target_path) {
+                        match entry {
+                            Ok(entry) => {
+                                if entry.file_type().is_file() {
+                                    entropy_tracker.seed_file(entry.into_path());
                                 }
-                            } else if path.is_file() {
-                                entropy_tracker.seed_file(path);
                             }
-                        }
-                        Err(e) => {
-                            logger.system_warn(&format!("could not access directory entry: {e}"))
+                            Err(e) => logger
+                                .system_warn(&format!("could not access directory entry: {e}")),
                         }
                     }
-                }
-            } else {
-                watch_path(logger, fd, target_path, flags, mask)?;
-                if target_path.is_file() {
+                } else if target_path.is_file() {
                     entropy_tracker.seed_file(target_path.clone());
                 }
             }
@@ -84,7 +70,7 @@ impl PlatformMonitor for LinuxMonitor {
 
         Ok(LinuxMonitor {
             fd,
-            watched_dirs,
+            target_paths: target_paths.to_vec(),
             entropy_tracker,
             telemetry_tracker,
         })
@@ -152,6 +138,15 @@ impl PlatformMonitor for LinuxMonitor {
 }
 
 impl LinuxMonitor {
+    fn is_monitored_path(&self, path: &Path) -> bool {
+        if path == Path::new(LOG_PATH) {
+            return false;
+        }
+        self.target_paths
+            .iter()
+            .any(|target| path.starts_with(target))
+    }
+
     fn handle_event(&mut self, logger: &IronDomeLogger, fd: RawFd, pid: i32, mask: u64) {
         if pid as u32 == std::process::id() {
             return;
@@ -162,12 +157,7 @@ impl LinuxMonitor {
             return;
         };
 
-        if real_path == Path::new(LOG_PATH) {
-            return;
-        }
-
-        if (mask & libc::FAN_ONDIR) != 0 {
-            self.watch_new_subdir(logger, &real_path);
+        if !self.is_monitored_path(&real_path) {
             return;
         }
 
@@ -207,26 +197,6 @@ impl LinuxMonitor {
         } else if (mask & libc::FAN_MODIFY) != 0 {
             self.telemetry_tracker
                 .on_file_write(logger, pid, &real_path, None);
-        }
-    }
-
-    fn watch_new_subdir(&mut self, logger: &IronDomeLogger, parent_dir: &Path) {
-        let flags = libc::FAN_MARK_ADD;
-        let mask: u64 = libc::FAN_ACCESS
-            | libc::FAN_CLOSE_WRITE
-            | libc::FAN_MODIFY
-            | libc::FAN_EVENT_ON_CHILD
-            | libc::FAN_ONDIR;
-
-        if let Ok(entries) = fs::read_dir(parent_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() && !self.watched_dirs.contains(&path) {
-                    let _ = watch_path(logger, self.fd, &path, flags, mask);
-                } else if path.is_file() {
-                    self.entropy_tracker.seed_file(path);
-                }
-            }
         }
     }
 }
