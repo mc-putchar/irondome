@@ -111,7 +111,7 @@ impl PlatformMonitor for LinuxMonitor {
                 unsafe { &*(buf.0.as_ptr().add(offset) as *const libc::fanotify_event_metadata) };
             if meta.vers != libc::FANOTIFY_METADATA_VERSION {
                 logger.system_error("Mismatched fanotify metadata version");
-                panic!("Mismatched fanotify metadata version");
+                break;
             }
             if meta.event_len as usize == 0_usize {
                 break;
