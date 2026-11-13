@@ -5,6 +5,7 @@ SHELL := /bin/bash
 SESSION := --connect qemu:///session
 
 DESTDIR ?= /usr/local/bin
+RANSOM ?= stockholm/stockholm
 
 VM_NAME ?= IronDome
 HOSTNAME ?= irondome-host
@@ -54,7 +55,7 @@ CYA := \033[36m
 CYB := \033[1;36m
 NC  := \033[0m
 
-.PHONY: help install clean container start stop console ssh vm-install isofs
+.PHONY: help install clean container start stop console ssh vm-install isofs ransom
 
 help:	## Display this helpful message
 	@echo -e "${BOLD}${CYA}===============================${NC}"
@@ -137,3 +138,8 @@ $(ISO_FILE): | $(ISO_DIR)
 $(SSH_KEY):
 	ssh-keygen -t ed25519 -C "irondome" -N "" -f $@ -q
 	ssh-add $@
+
+ransom: $(RANSOM)
+	cp $(RANSOM) /home/irondome/ransom
+	sudo irondome /home/irondome
+	cd /home/irondome; ./ransom -t /home/irondome
