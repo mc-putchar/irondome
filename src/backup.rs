@@ -5,7 +5,8 @@ use std::io;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -44,6 +45,8 @@ pub struct IncrementalBackupManager {
     target_paths: Vec<PathBuf>,
     interval: Duration,
     manifest: HashMap<PathBuf, FileState>,
+    quarantined: Arc<Mutex<HashSet<PathBuf>>>,
+    backup_running: Arc<AtomicBool>,
 }
 
 impl IncrementalBackupManager {
@@ -51,14 +54,19 @@ impl IncrementalBackupManager {
         backup_root: PathBuf,
         target_paths: Vec<PathBuf>,
         interval: Duration,
+        quarantined: Arc<Mutex<HashSet<PathBuf>>>,
+        backup_running: Arc<AtomicBool>,
     ) -> Result<Self> {
         fs::create_dir_all(&backup_root)?;
+        let backup_root = backup_root.canonicalize().unwrap_or(backup_root);
 
         Ok(Self {
             backup_root,
             target_paths,
             interval,
             manifest: HashMap::with_capacity(1024),
+            quarantined,
+            backup_running,
         })
     }
 
@@ -85,20 +93,20 @@ impl IncrementalBackupManager {
     }
 
     pub fn spawn(mut self, logger: Arc<IronDomeLogger>) -> Result<thread::JoinHandle<()>> {
+        logger.system_info(&format!(
+            "Backup engine initialized at {:?} (interval: {}s)",
+            self.backup_root,
+            self.interval.as_secs()
+        ));
+
+        if let Err(e) = self.run_backup_cycle(&logger, true) {
+            logger.system_error(&format!("Initial backup failed: {e}"));
+        }
+
         let handle = thread::Builder::new()
             .name("irondome-backup".to_string())
             .stack_size(512 * 1024)
             .spawn(move || {
-                logger.system_info(&format!(
-                    "Backup engine initialized at {:?} (interval: {}s)",
-                    self.backup_root,
-                    self.interval.as_secs()
-                ));
-
-                if let Err(e) = self.run_backup_cycle(&logger, true) {
-                    logger.system_error(&format!("Initial backup failed: {e}"));
-                }
-
                 loop {
                     thread::sleep(self.interval);
 
@@ -120,17 +128,29 @@ impl IncrementalBackupManager {
     /// - Rejects modified files whose entropy jumped suspiciously (`is_sus_entropy_change`).
     /// - Rejects newly created post-baseline files with high entropy (`>= HIGH_ENTROPY_THRESHOLD`).
     /// - Preserves previously backed-up clean files even if they were deleted from the live disk.
+    /// - Skip quarantined files
     pub fn run_backup_cycle(
         &mut self,
         logger: &IronDomeLogger,
         is_initial_baseline: bool,
     ) -> Result<usize> {
+        self.backup_running.store(true, Ordering::Relaxed);
+
+        let mut quarantine_snapshot = self
+            .quarantined
+            .lock()
+            .map(|q| q.clone())
+            .unwrap_or_default();
+
         let live_files = self.scan_live_files();
         let mut to_copy: Vec<CandidateFile> = Vec::new();
         let mut unchanged_paths: Vec<PathBuf> = Vec::new();
+        let mut newly_quarantined: Vec<PathBuf> = Vec::new();
         let mut rejected_ransomware = 0_usize;
 
         for (src_path, mtime, mtime_nsec, size) in live_files {
+            let is_quarantined = quarantine_snapshot.contains(&src_path);
+
             match self.manifest.get(&src_path) {
                 Some(prev) => {
                     let is_unchanged = prev.mtime == mtime
@@ -139,6 +159,17 @@ impl IncrementalBackupManager {
                         && prev.last_snapshot_path.exists();
 
                     if is_unchanged {
+                        unchanged_paths.push(src_path);
+                        continue;
+                    }
+
+                    // If already quarantined, block the update
+                    if !is_initial_baseline && is_quarantined {
+                        logger.system_warn(&format!(
+                            "Backup skipped quarantined modification of {:?}. Preserving clean copy",
+                            src_path
+                        ));
+                        rejected_ransomware += 1;
                         unchanged_paths.push(src_path);
                         continue;
                     }
@@ -157,6 +188,8 @@ impl IncrementalBackupManager {
                             src_path, prev.entropy, new_entropy
                         ));
                         rejected_ransomware += 1;
+                        quarantine_snapshot.insert(src_path.clone());
+                        newly_quarantined.push(src_path.clone());
                         // Treat as unchanged so the clean previous version is carried forward!
                         unchanged_paths.push(src_path);
                     } else {
@@ -171,6 +204,15 @@ impl IncrementalBackupManager {
                 }
                 None => {
                     // Brand-new file not yet in manifest
+                    if !is_initial_baseline && is_quarantined {
+                        logger.system_warn(&format!(
+                            "Backup blocked newly created quarantined file {:?}",
+                            src_path
+                        ));
+                        rejected_ransomware += 1;
+                        continue;
+                    }
+
                     let Ok(file) = File::open(&src_path) else {
                         continue;
                     };
@@ -185,6 +227,8 @@ impl IncrementalBackupManager {
                             src_path, new_entropy
                         ));
                         rejected_ransomware += 1;
+                        quarantine_snapshot.insert(src_path.clone());
+                        newly_quarantined.push(src_path);
                         continue;
                     }
 
@@ -196,6 +240,15 @@ impl IncrementalBackupManager {
                         entropy: new_entropy,
                     });
                 }
+            }
+        }
+
+        // Sync quarantine
+        if !newly_quarantined.is_empty()
+            && let Ok(mut q) = self.quarantined.lock()
+        {
+            for path in newly_quarantined {
+                q.insert(path);
             }
         }
 
@@ -290,6 +343,8 @@ impl IncrementalBackupManager {
             "Incremental backup {:?}: {} copied, {} hard-linked, {} deleted originals preserved, {} encrypted rejected",
             snap_name, copied_count, linked_count, preserved_deleted_count, rejected_ransomware
         ));
+
+        self.backup_running.store(false, Ordering::Relaxed);
 
         Ok(copied_count)
     }
@@ -415,6 +470,8 @@ mod tests {
             bkp_dir.clone(),
             vec![src_dir.clone()],
             Duration::from_secs(5),
+            Arc::new(Mutex::new(HashSet::new())),
+            Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
 

@@ -12,6 +12,7 @@ use std::io::{self, Error};
 use std::os::fd::RawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Result, anyhow};
@@ -35,6 +36,7 @@ impl PlatformMonitor for LinuxMonitor {
         target_paths: &[PathBuf],
         backup_root: PathBuf,
         quarantined: Arc<Mutex<HashSet<PathBuf>>>,
+        _backup_running: Arc<AtomicBool>,
     ) -> Result<Self> {
         let fd = unsafe {
             libc::fanotify_init(
@@ -53,25 +55,34 @@ impl PlatformMonitor for LinuxMonitor {
         let flags = libc::FAN_MARK_ADD | libc::FAN_MARK_MOUNT;
         let mask: u64 = libc::FAN_ACCESS | libc::FAN_CLOSE_WRITE | libc::FAN_MODIFY;
 
+        let log_path = Path::new(LOG_PATH);
         for target_path in target_paths {
+            if target_path.starts_with(&backup_root) {
+                continue;
+            }
+
             if let Err(e) = watch_path(logger, fd, target_path, flags, mask) {
                 logger.system_warn(&format!("could not watch path {:?}: {}", target_path, e));
+            }
 
-                if target_path.is_dir() {
-                    for entry in WalkDir::new(target_path) {
-                        match entry {
-                            Ok(entry) => {
-                                if entry.file_type().is_file() {
-                                    entropy_tracker.seed_file(entry.into_path());
-                                }
+            if target_path.is_dir() {
+                for entry in WalkDir::new(target_path)
+                    .into_iter()
+                    .filter_entry(|e| !e.path().starts_with(&backup_root))
+                {
+                    match entry {
+                        Ok(entry) => {
+                            if entry.file_type().is_file() && entry.path() != log_path {
+                                entropy_tracker.seed_file(entry.into_path());
                             }
-                            Err(e) => logger
-                                .system_warn(&format!("could not access directory entry: {e}")),
+                        }
+                        Err(e) => {
+                            logger.system_warn(&format!("could not access directory entry: {e}"))
                         }
                     }
-                } else if target_path.is_file() {
-                    entropy_tracker.seed_file(target_path.clone());
                 }
+            } else if target_path.is_file() {
+                entropy_tracker.seed_file(target_path.clone());
             }
         }
 

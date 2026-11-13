@@ -7,6 +7,7 @@ use irondome::signals::setup_signal_handlers;
 use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -41,6 +42,7 @@ fn main() -> Result<()> {
     let backup_interval_secs = DEFAULT_BACKUP_INTERVAL_SECS;
     let backup_root = IncrementalBackupManager::resolve_default_backup_dir()?;
     let quarantined = Arc::new(Mutex::new(HashSet::new()));
+    let backup_running = Arc::new(AtomicBool::new(false));
 
     logger.system_info("Starting irondome daemon...");
 
@@ -48,15 +50,22 @@ fn main() -> Result<()> {
     let _pid_file = daemonize()?;
     setup_signal_handlers()?;
 
-    let backup_manager = IncrementalBackupManager::new(
+    let mut monitor = init_monitor(
+        &logger,
+        &target_paths,
         backup_root.clone(),
+        Arc::clone(&quarantined),
+        Arc::clone(&backup_running),
+    )?;
+
+    let backup_manager = IncrementalBackupManager::new(
+        backup_root,
         target_paths.clone(),
         Duration::from_secs(backup_interval_secs),
-        Arc::clone(&quarantined),
+        quarantined,
+        backup_running,
     )?;
     let _backup_handle = backup_manager.spawn(Arc::clone(&logger))?;
-
-    let mut monitor = init_monitor(&logger, &target_paths, backup_root, quarantined)?;
 
     loop {
         if let Err(e) = monitor.poll_events(&logger) {

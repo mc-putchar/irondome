@@ -2,6 +2,7 @@ use crate::logger::IronDomeLogger;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 #[allow(unused_imports)]
@@ -13,6 +14,7 @@ pub trait PlatformMonitor {
         target_paths: &[PathBuf],
         backup_root: PathBuf,
         quarantined: Arc<Mutex<HashSet<PathBuf>>>,
+        backup_running: Arc<AtomicBool>,
     ) -> Result<Self>
     where
         Self: Sized;
@@ -36,6 +38,7 @@ pub fn init_monitor(
     target_paths: &[PathBuf],
     backup_root: PathBuf,
     quarantined: Arc<Mutex<HashSet<PathBuf>>>,
+    backup_running: Arc<AtomicBool>,
 ) -> Result<Box<dyn PlatformMonitor>> {
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "freebsd")))]
     return Err(anyhow!("Unsupported OS for file monitoring"));
@@ -46,6 +49,7 @@ pub fn init_monitor(
         target_paths,
         backup_root,
         quarantined,
+        backup_running,
     )?));
 
     #[cfg(any(target_os = "macos", target_os = "freebsd"))]
