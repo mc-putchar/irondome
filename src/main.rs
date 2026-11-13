@@ -13,9 +13,9 @@ use std::time::Duration;
 use anyhow::{Context, Result, anyhow};
 
 const NO_ARGS_MESSAGE: &str = "No arguments provided.
-Watching default paths: /etc, /home, /var/www.";
-const DEFAULT_TARGET_PATHS: &[&str] = &["/etc", "/home", "/var/www"];
-const DEFAULT_BACKUP_INTERVAL_SECS: u64 = 30;
+Watching default paths: /etc, /home.";
+const DEFAULT_TARGET_PATHS: &[&str] = &["/etc", "/home"];
+const DEFAULT_BACKUP_INTERVAL_SECS: u64 = 5;
 
 fn main() -> Result<()> {
     if !is_root() {
@@ -56,7 +56,7 @@ fn main() -> Result<()> {
     )?;
     let _backup_handle = backup_manager.spawn(Arc::clone(&logger))?;
 
-    let mut monitor = init_monitor(&logger, &target_paths)?;
+    let mut monitor = init_monitor(&logger, &target_paths, backup_root, quarantined)?;
 
     loop {
         if let Err(e) = monitor.poll_events(&logger) {

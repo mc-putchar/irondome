@@ -9,7 +9,7 @@ use anyhow::{Result, anyhow};
 const MAX_BASELINE_ENTRIES: usize = 50_000;
 const MAX_SAMPLE_BYTES: usize = 4 * 1024 * 1024;
 
-const HIGH_ENTROPY_THRESHOLD: f64 = 7.80;
+pub const HIGH_ENTROPY_THRESHOLD: f64 = 7.80;
 const ENTROPY_DELTA_THRESHOLD: f64 = 1.20;
 
 #[derive(Debug, Clone)]

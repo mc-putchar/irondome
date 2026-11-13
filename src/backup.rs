@@ -159,10 +159,13 @@ impl IncrementalBackupManager {
             // Skip files that are quarantined for suspicious entropy
             if quarantined_guard.contains(&src_path) {
                 skipped_quarantined += 1;
-                if let Some(prev) = self.manifest.get(&src_path)
-                    && prev.last_snapshot_path.exists()
-                {
-                    let _ = fs::hard_link(&prev.last_snapshot_path, &dest_path);
+                match self.manifest.get(&src_path) {
+                    Some(prev) => {
+                        let _ = fs::hard_link(&prev.last_snapshot_path, &dest_path);
+                    }
+                    _ => {
+                        // TODO: handle a quarantined file that has not been backed up yet
+                    }
                 }
                 continue;
             }
@@ -186,23 +189,28 @@ impl IncrementalBackupManager {
                 continue;
             }
 
-            if copy_file_stream(&src_path, &dest_path).is_ok() {
-                if self.manifest.len() >= MAX_MANIFEST_ENTRIES
-                    && !self.manifest.contains_key(&src_path)
-                {
-                    self.reclaim_memory();
-                }
+            match copy_file_stream(&src_path, &dest_path) {
+                Ok(_) => {
+                    if self.manifest.len() >= MAX_MANIFEST_ENTRIES
+                        && !self.manifest.contains_key(&src_path)
+                    {
+                        self.reclaim_memory();
+                    }
 
-                self.manifest.insert(
-                    src_path,
-                    FileState {
-                        mtime,
-                        mtime_nsec,
-                        size,
-                        last_snapshot_path: dest_path,
-                    },
-                );
-                copied_count += 1;
+                    self.manifest.insert(
+                        src_path,
+                        FileState {
+                            mtime,
+                            mtime_nsec,
+                            size,
+                            last_snapshot_path: dest_path,
+                        },
+                    );
+                    copied_count += 1;
+                }
+                Err(e) => {
+                    logger.system_warn(&format!("Failed to copy file {:?}: {}", src_path, e));
+                }
             }
         }
 
@@ -263,8 +271,8 @@ impl IncrementalBackupManager {
     }
 
     pub fn reclaim_memory(&mut self) {
-        self.manifest.clear();
-        self.manifest.shrink_to(256);
+        // self.manifest.clear();
+        // self.manifest.shrink_to(256);
     }
 }
 

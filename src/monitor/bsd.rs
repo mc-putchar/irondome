@@ -55,10 +55,17 @@ pub struct BsdMonitor {
     path_to_fd: HashMap<PathBuf, RawFd>,
     entropy_tracker: EntropyTracker,
     telemetry_tracker: TelemetryTracker,
+    backup_root: PathBuf,
+    quarantined: Arc<Mutex<HashSet<PathBuf>>>,
 }
 
 impl PlatformMonitor for BsdMonitor {
-    fn init(logger: &IronDomeLogger, target_paths: &[PathBuf]) -> Result<Self> {
+    fn init(
+        logger: &IronDomeLogger,
+        target_paths: &[PathBuf],
+        backup_root: PathBuf,
+        quarantined: Arc<Mutex<HashSet<PathBuf>>>,
+    ) -> Result<Self> {
         raise_fd_limit(logger);
 
         let kq = unsafe { libc::kqueue() };
@@ -76,6 +83,8 @@ impl PlatformMonitor for BsdMonitor {
             path_to_fd: HashMap::with_capacity(512),
             entropy_tracker: EntropyTracker::new(),
             telemetry_tracker: TelemetryTracker::new(),
+            backup_root,
+            quarantined,
         };
 
         for target_path in target_paths {

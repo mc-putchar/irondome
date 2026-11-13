@@ -30,7 +30,12 @@ pub struct LinuxMonitor {
 }
 
 impl PlatformMonitor for LinuxMonitor {
-    fn init(logger: &IronDomeLogger, target_paths: &[PathBuf]) -> Result<Self> {
+    fn init(
+        logger: &IronDomeLogger,
+        target_paths: &[PathBuf],
+        backup_root: PathBuf,
+        quarantined: Arc<Mutex<HashSet<PathBuf>>>,
+    ) -> Result<Self> {
         let fd = unsafe {
             libc::fanotify_init(
                 libc::FAN_CLASS_NOTIF | libc::FAN_CLOEXEC | libc::FAN_UNLIMITED_MARKS,
@@ -74,9 +79,11 @@ impl PlatformMonitor for LinuxMonitor {
 
         Ok(LinuxMonitor {
             fd,
-            target_paths: target_paths.to_vec(),
             entropy_tracker,
             telemetry_tracker,
+            target_paths: target_paths.to_vec(),
+            backup_root,
+            quarantined,
         })
     }
 
