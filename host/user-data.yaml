@@ -21,6 +21,7 @@ packages:
   - apt-transport-https
   - build-essential
   - make
+  - btop
 
 users:
   - name: irondome

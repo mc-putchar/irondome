@@ -4,6 +4,7 @@ set -u
 BIN="irondome"
 LOG_FILE="/var/log/irondome/irondome.log"
 PID_FILE="/run/irondome.pid"
+BACKUP_DIR="/home/irondome/backup"
 TEST_DIR_A="/tmp/irondome_eval_a"
 TEST_DIR_B="/tmp/irondome_eval_b"
 
@@ -24,9 +25,6 @@ pass() {
 fail() {
     echo -e "  ${RED}[FAIL]${NC} $1"
     FAILED=$((FAILED + 1))
-    echo "========= LOG ==========="
-    tail "$LOG_FILE"
-    echo "========================="
 }
 
 cleanup() {
@@ -177,12 +175,11 @@ fi
 # Test bonus Incremental Backups
 echo -e "\n${YLW}[Bonus] Verifying incremental backups in HOME directory...${NC}"
 USER_HOME=$(getent passwd "${SUDO_USER:-root}" | cut -d: -f6)
-BACKUP_DIR="$USER_HOME/irondome_backups"
 
 echo "Incremental backup test payload" > "$TEST_DIR_A/bonus_incremental.txt"
-sleep 3
+sleep 7
 
-if [[ -L "$BACKUP_DIR/latest" ]] && find "$BACKUP_DIR/latest" -name "bonus_incremental.txt" | grep -q "bonus_incremental.txt"; then
+if [[ -L "$BACKUP_DIR/latest" ]] && find -L "$BACKUP_DIR/latest" -name "bonus_incremental.txt" | grep -q "bonus_incremental.txt"; then
     SNAP_COUNT=$(find "$BACKUP_DIR" -maxdepth 1 -type d -name "snapshot_*" | wc -l)
     pass "Incremental backup verified in $BACKUP_DIR ($SNAP_COUNT snapshots created)"
 else
